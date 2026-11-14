@@ -2,7 +2,9 @@
     - id: tool-harness-bridge
       name: '@waeotech/harness-bridge'
       config:
-        profile: zh-CN
+        workspaceRoot: '' # Required: set an absolute original project directory in DSH settings.
+        language: zh-CN
+        transport: headless
         allowEdits: false
         maxTurns: 8
         maxBudgetUsd: 2

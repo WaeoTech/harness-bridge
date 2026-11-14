@@ -15,7 +15,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      # The core has no dependencies. Native DSH tests explicitly skip without peers.
+      - run: npm install --ignore-scripts --no-save --no-package-lock @deepseek-ai/dsh-tools@0.2.0-rc.2 @deepseek-ai/schemastery@~3.18.4
+      - run: node --input-type=module -e "await import('./src/dsh.js')"
+      - name: Ensure tmux is available
+        run: |
+          if ! command -v tmux >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y tmux
+          fi
       - run: npm test
       - run: npm run check
       - run: npm pack --dry-run

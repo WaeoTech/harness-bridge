@@ -4,11 +4,11 @@
 
 # 🌉 Harness Bridge
 
-### Plan in DeepSeek Harness. Execute in Claude Code. Verify the diff.
+### Plan in DeepSeek Harness. Watch Claude Code work. Review before applying.
 
-**A harness over your harness — a local DSH plugin that turns your existing Claude Code CLI into a bounded worker.**
+**A local DSH plugin for your existing Claude Code CLI — headless or inside a managed tmux session.**
 
-<img src="docs/assets/harness-bridge-cover.jpg" alt="A bridge connects planning and execution, with a return path for verification" width="1000" />
+<img src="docs/assets/harness-bridge-cover.jpg" alt="A bridge connects planning, execution and independent verification" width="1000" />
 
 [![CI](https://github.com/WaeoTech/harness-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/WaeoTech/harness-bridge/actions/workflows/ci.yml)
 ![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
@@ -16,135 +16,153 @@
 ![DSH 0.2.0-rc.2](https://img.shields.io/badge/DSH-0.2.0--rc.2-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-[Quick start](#quick-start) · [How it works](#how-it-works) · [Real test results](#real-test-results) · [Grok setup](docs/grok-compat.md) · [FAQ](#faq) · [Architecture](docs/architecture.md)
+[Quick start](#quick-start) · [Language and execution settings](#language-and-execution-settings) · [Live progress](#live-progress) · [Review and Git](#review-and-git) · [Validation](docs/validation.md) · [Grok setup](docs/grok-compat.md)
 
 </div>
 
 ---
 
-| DSH plans | Claude Code executes | DSH verifies |
+| DSH plans | Claude Code executes | DSH reviews |
 | --- | --- | --- |
-| Scope the task, choose language preferences and set acceptance criteria. | Use the locally installed CLI with an explicit tool list and session UUID. | Inspect actual source changes and run checks before reporting completion. |
+| Select the working language, scope the task and define acceptance checks. | Work in a Git-free copy using the installed CLI. Stream real tool events to a native DSH job. | Inspect the proposal, approve the exact digest, apply files and own every Git operation. |
 
-## Why another harness?
+## What it does
 
-DSH can scope a task, inspect a worker's result, and decide the next step. Claude Code can execute that task using its existing local installation and authentication. Harness Bridge connects those two loops through a small tool boundary.
+- **Two execution modes:** launch a bounded headless process or run that same real CLI inside an attachable, plugin-owned tmux pane.
+- **Actual progress in DSH:** show tool names, paths, completion/failure events and final status from Claude's `stream-json` protocol.
+- **Language in settings:** choose Simplified Chinese, US English, UK English or Japanese. The parent is instructed to compose tasks in that language; a worker system instruction sets the response language and writing style.
+- **Proposals before writes:** Claude edits a temporary copy. The original project stays unchanged until DSH applies a reviewed proposal.
+- **Git belongs to DSH:** omit `.git` from the worker, deny shell/subagents/MCP and guard file-tool access. DSH audits the original repository and decides whether to stage, commit or push.
+- **Bounded lifecycle:** explicit UUID continuation, turn/budget/timeout limits, one active worker per instance and up to eight retained proposal copies.
 
-The parent owns the task and acceptance criteria. The worker owns its local Claude session. The bridge handles structured events, cancellation, turn and budget settings, and explicit session continuation.
-
-**This is an experimental prototype.** Source is available on [GitHub](https://github.com/WaeoTech/harness-bridge); the npm package is not published. Linux testing uses real Claude Code `2.1.325`, Node `22.22.3` and a Grok gateway on a US node; the native DSH adapter is separately tested against the installed `0.2.0-rc.2` API. A full DSH GUI task, Anthropic-hosted model, macOS and Windows remain unverified. See the [validation record](docs/validation.md).
+**Version 0.2.0 is experimental.** Source is public; npm has not been published. Linux is the tested platform. The [validation record](docs/validation.md) separates local API tests, real CLI/Grok tests and remaining GUI/platform checks. No account-safety or benchmark claim is made.
 
 ## Quick start
 
-Prerequisites: Node.js 22+, DeepSeek Harness `0.2.0-rc.2`, pnpm available to DSH's plugin manager, and a supported Claude Code CLI installed and authenticated separately. The bridge uses the current documented `-p`, `stream-json`, `dontAsk`, `--tools`, `--strict-mcp-config`, `--max-turns` and `--max-budget-usd` flags. It does not manage accounts or supply authentication.
-
-Clone the source and check your local CLI:
+Install Node.js 22+, DSH `0.2.0-rc.2`, pnpm for DSH's plugin manager, and Claude Code with your own authentication. Install tmux separately if using that transport.
 
 ```bash
 git clone https://github.com/WaeoTech/harness-bridge.git
 cd harness-bridge
 node bin/cli.js doctor
-node bin/cli.js run --cwd /absolute/project --prompt "Review the authentication module and list concrete bugs"
-```
-
-The standalone core has no runtime dependencies. Install the local bundle into your DSH Web profile; DSH's plugin manager resolves the native adapter's peer packages:
-
-```bash
 dsh plugin --profile web add "$PWD"
 ```
 
-Add an override for the inserted plugin row to your profile patch (`~/.dsh/profiles/web/cordis.patch.yml`). Keep all configuration fields when replacing this row's config:
+Configure the inserted `tool-harness-bridge` entry through the running DSH configuration editor, or add a complete override to the profile patch and apply it through DSH's supported configuration flow:
 
 ```yaml
 - id: tool-harness-bridge
   config:
     workspaceRoot: /absolute/project
     executable: claude
-    profile: zh-CN
+    language: en-US
+    transport: tmux
     allowEdits: false
     maxTurns: 8
     maxBudgetUsd: 2
     timeoutMs: 300000
 ```
 
-An absolute workspace root is intentionally required. The tool refuses to execute until it is configured. The bundle does not infer the active DSH workspace. Use one plugin instance per workspace in this preview.
+An absolute `workspaceRoot` is required. The bridge does not guess the current workspace. One plugin instance serves one configured root. Changing a patch file alone does not guarantee that an existing DSH process reloads it.
 
-Start DSH with that profile after configuring it. For an already-running instance, apply the configuration through its supported configuration editor or restart it yourself; editing the patch on disk does not guarantee live reload.
+Use an unrestricted (`danger-full-access`) DSH session:
 
-Use an unrestricted DSH session and ask the parent agent:
+> Read harness_settings. Ask Claude Code to review the authentication module in the configured language. Run it in the background, follow the job's real tool events, then verify the findings yourself. Stop on authentication or permission failures.
 
-> Use `claude_code` to review the authentication module. Pass concrete acceptance criteria. Inspect its result and confirm each finding against the source. Stop if the worker reports a permission or authentication failure.
-
-To enable worker edits, explicitly set `allowEdits: true` in the operator configuration, then request `mode: "edit"`. The worker receives Edit/Write in addition to reading tools. Shell commands remain unavailable, so ask DSH to run tests after inspecting the diff.
-
-Uninstall:
+Set `allowEdits: true` in operator settings before delegating `mode: "edit"`. Worker output then includes a `reviewId`; edits still remain in the copy.
 
 ```bash
 dsh plugin --profile web remove @waeotech/harness-bridge
 ```
 
-## How it works
+## Language and execution settings
 
-```mermaid
-sequenceDiagram
-    actor User
-    participant DSH as DSH parent agent
-    participant Bridge as claude_code tool
-    participant Claude as Local Claude Code
-    User->>DSH: Task and acceptance criteria
-    DSH->>Bridge: Scoped prompt + review/edit + optional sessionId
-    Bridge->>Bridge: Check DSH policy, workspace and operator limits
-    Bridge->>Claude: Spawn -p and send prompt over stdin
-    Claude-->>Bridge: stream-json events
-    Bridge-->>DSH: Status, sessionId, result, denials, estimated cost
-    DSH->>DSH: Inspect source/diff and run checks
-    DSH-->>User: Verified outcome or concrete blocker
+The plugin exports a native DSH configuration schema. Its volatile fields appear in DSH settings and are read through the host's readonly references. Changes affect subsequent tasks. An active task keeps its captured language, limits and transport.
+
+| Setting | Values / behavior |
+| --- | --- |
+| `language` | `zh-CN` (default), `en-US`, `en-GB`, `ja-JP` |
+| `transport` | `headless` (default) or `tmux` |
+| `workspaceRoot` | Absolute original project directory |
+| `allowEdits` | Default `false`; permits worker edit proposals and reviewed apply |
+| `executable` | Local `claude` or an operator-configured provider wrapper |
+| `maxTurns` | 1–100; default 8 |
+| `maxBudgetUsd` | Positive budget up to 100; default 2; reported costs remain estimates |
+| `timeoutMs` | Up to one hour; default five minutes |
+
+`harness_settings` exposes language, transport and edit policy to the parent before it composes a task. The plugin does not use a separate translation model. Language presets control communication and spelling; they do not establish nationality, location or account eligibility.
+
+## Live progress
+
+Both transports consume the real CLI's event stream. Native DSH job output contains readable lifecycle lines:
+
+```text
+Claude Code started
+→ Read {"path":"src/calculator.js"}
+← toolu_...: completed
+→ Edit {"path":"src/calculator.js"}
+← toolu_...: completed
+Claude Code: success
+Proposal: 1 changed files; inspect with harness_review
 ```
 
-The tool consumes structured events internally and returns a final JSON string. It does not yet display Claude's token stream inside the DSH GUI. The independent CLI's `--events` option prints raw events to stderr for local debugging; those events may contain source code or task data.
+These lines describe observed events. They do not expose hidden reasoning, stream full file bodies or claim a check passed merely because the worker says so.
 
-## Capabilities
+Set `run_in_background: true` in `claude_code` to return a `jobId` immediately, then use DSH `job_output` and `job_kill`. Foreground runs also create a native job and wait for its result.
 
-| Capability | Preview behavior |
-| --- | --- |
-| DSH integration | Native tool registration and installable bundle |
-| Claude integration | Local CLI subprocess; no terminal scraping |
-| Review | Read, Glob and Grep tools |
-| Editing | Edit and Write, only when operator enabled |
-| Shell/MCP | Disabled in the worker |
-| Sessions | Return explicit session UUID; resume by UUID |
-| Locale | `zh-CN`, `en-US`, `en-GB`, `ja-JP` |
-| Failure reporting | Distinguish success, permission denial, limit/error and process failure |
-| Lifecycle | DSH-managed process ownership; abort, timeout and cleanup |
-| Output limits | 4 MiB/event line and 32 MiB total stdout |
-| Dependencies | Standalone core uses Node built-ins; native adapter consumes DSH peers |
-
-## CLI examples
+With `transport: tmux`, the job emits an attach command while the worker is running:
 
 ```bash
-node bin/cli.js run --cwd /absolute/project \
-  --prompt "Explain this module" --profile en-GB --max-turns 4 --budget 1
-
-node bin/cli.js run --cwd /absolute/project \
-  --prompt "Apply the agreed fix; report changed files" --mode edit
-
-node bin/cli.js run --cwd /absolute/project \
-  --prompt "Check the edge case we discussed" --resume YOUR_SESSION_UUID
+tmux -S '/tmp/harness-bridge-tmux-.../socket' attach -t claude
 ```
 
-CLI edit mode is an explicit user choice and does not use the DSH operator configuration. Keep the same workspace and locale when resuming. The preview does not persist a session-to-locale mapping or coordinate other independently launched bridge processes.
+The plugin creates a private tmux server, starts `claude -p` in its pane, displays real tool lifecycle lines there and forwards the raw structured events to DSH. Completing or cancelling the task removes that server and its temporary logs. Attaching requires terminal access to the same host and OS account. This mode does not take over a pre-existing manually opened Claude TUI, and tmux is not used to scrape terminal text or simulate keystrokes.
 
-## Permissions and trust
+## Review and Git
 
-The DSH adapter **requires `danger-full-access`**. A nested CLI cannot enforce the parent's DSH file sandbox. It refuses restricted modes rather than silently escaping their policy. The configured root constrains the child process's starting directory; it is **not an OS sandbox** and does not confine Claude's filesystem tools to that root. Run only in workspaces and user accounts you trust.
+```mermaid
+flowchart LR
+    U["User settings"] --> D["DSH planner"]
+    D --> J["Native DSH job"]
+    J --> W["Git-free workspace copy"]
+    W --> C["Claude Code"]
+    C -->|stream-json events| J
+    C --> P["File proposal"]
+    P --> R["DSH review and verification"]
+    R -->|approved files| O["Original repository"]
+    O --> G["DSH Git audit and commit"]
+```
 
-The worker uses `dontAsk` plus an explicit tool list. There is no `--dangerously-skip-permissions` flag. Review mode restricts the available built-in tools but is not a guarantee that startup hooks cannot write files. Claude Code can load local/project hooks, settings, skills and instructions in print mode. Those remain operator-controlled; the preview does not neutralize arbitrary local hooks. Use a disposable worktree and review the local Claude configuration before running untrusted repositories.
+1. **Prepare:** copy regular project files and directories into a temporary workspace. Exclude `.git`, `.claude`, `node_modules`, symlinks and special files.
+2. **Execute:** allow `Read`, `Glob`, `Grep`; edit mode additionally allows `Edit` and `Write`. Load the bridge's own settings/hook, disable normal user/project setting sources and slash commands, supply an empty MCP configuration and deny Bash/subagents/MCP.
+3. **Guard:** a `PreToolUse` hook rejects other tools, Git/Claude metadata paths, traversal and symlink access outside the copy.
+4. **Inspect:** `harness_review {reviewId, action:"inspect"}` returns changes, a readable diff and a digest. DSH checks scope and acceptance evidence and obtains the user's authorization to apply.
+5. **Apply:** `harness_review {reviewId, action:"apply", digest}` checks the frozen proposal and the entire original snapshot, then copies reviewed additions/modifications. Changes to either side refuse the apply. Failures attempt rollback. Deletions are currently rejected.
+6. **Audit:** `harness_git_audit` reads original Git status and HEAD diff in DSH. DSH performs further tests and any staging, commit or push using its own tools and authorization.
+7. **Discard or continue:** discard unused copies, or resume the exact returned `sessionId` while its review is retained. Resume requires the same root, subdirectory, mode, language and parent agent. Applied/discarded workers cannot be resumed.
 
-The DSH transport uses the host subprocess service, which scrubs ambient credential-shaped environment variables. It preserves the normal home directory for the user's own Claude login. The standalone CLI inherits its launching shell's environment. The core transports do not read, copy or store credential files. An optional [OpenAI/Grok wrapper](docs/grok-compat.md) can explicitly read an operator-supplied private provider configuration after the scrub; the model cannot select it through tool arguments. It passes a temporary loopback token to Claude Code rather than the upstream API key.
+Review records live only in the current plugin instance. Restart/disposal removes retained copies. Retained copies consume disk space; the ninth new worker is rejected until an earlier copy is applied or discarded. Limits are 64 MiB, 5,000 regular files and 10,000 entries per snapshot; diffs truncate explicitly at 4 MiB.
 
-Budget and turn limits are forwarded to Claude. Reported costs are estimates; these options are not a billing firewall. The parent DSH agent has its own model costs and limits. There are no automatic retries, account rotation, login automation, proxy changes or authentication recovery. Stop on permission/policy errors and let the operator resolve them.
+**The guard is not an OS sandbox.** Claude and DSH share an OS account; the CLI and any operator-selected executable are trusted. `danger-full-access` does not provide filesystem or credential isolation. File-tool checks, repeated path checks and `O_NOFOLLOW` cannot eliminate every concurrent parent-rename race. Use OS-level isolation for hostile executables or repositories. Applying is an optimistic file operation with rollback, not an atomic filesystem transaction.
 
-Locale profiles control spelling, language and presentation. They do not establish nationality, location or account eligibility, and provide no account-ban guarantee. Worker output can contain adversarial text; the parent must treat it as untrusted evidence, not as new authority.
+## Tools and result semantics
+
+| Tool | Responsibility |
+| --- | --- |
+| `harness_settings` | Read current communication language, transport and edit policy |
+| `claude_code` | Launch or resume a bounded worker, foreground or background |
+| `harness_review` | Inspect, apply an exact digest, or discard a retained proposal |
+| `harness_git_audit` | DSH-side read-only Git status and diff of the original repository |
+
+A successful worker with changes returns `status: "awaiting_review"`. Permission denials remain failures. `completed` means the CLI ended without a reported error; independent tests establish whether its answer is correct. The bridge does not automatically stage, commit, push, retry authentication or swap providers.
+
+The exported core and standalone `bin/cli.js run` are low-level debugging interfaces. They do not provide the native plugin's copy/review workflow, settings form, jobs or Git-free guard. Use the DSH plugin for the managed behavior described above. Raw CLI `--events` output can contain source and task data.
+
+## Existing Grok or OpenAI gateway
+
+Point `executable` at an operator-owned launcher for the optional compatibility wrapper. Keep upstream keys in private configuration, outside the repository. The tested Grok Web gateway needs explicit strict-JSON text-tool mode because its native route can return tool-looking text without executing a tool. See [setup and known limits](docs/grok-compat.md).
+
+The wrapper keeps the upstream key in its own process and gives Claude a per-run loopback token. A claimed edit remains untrusted until DSH checks the proposal and verifies the actual program behavior.
 
 ## Development and validation
 
@@ -154,66 +172,15 @@ npm run check
 npm pack --dry-run
 ```
 
-Core tests require no network, model calls or credentials. Adapter tests additionally exercise the real DSH `defineTool` API when its peer packages are available; they are skipped when peers are absent. Fixture process tests currently target POSIX. Windows process ownership uses DSH's host service but still needs a Windows end-to-end smoke test.
+Tests cover stream parsing, limits, process errors/cancellation, actual DSH tool and volatile-schema contracts, proposals/apply, conflict detection/rollback, guard decisions and real tmux lifecycle with a fixture worker. DSH tests explicitly skip when host peers are absent; tmux tests explicitly skip when tmux is unavailable. See the [validation record](docs/validation.md) for the actual development environment and real-model results.
 
-Real Linux smoke tests pass plain output, random-file `Read`, explicit UUID continuation, and `Read → Edit` followed by parent-side arithmetic checks through the optional Grok wrapper. The tested gateway needs experimental strict-JSON text tools; earlier false completion claims were caught by verification. See the [full validation record](docs/validation.md). A full native DSH GUI task, Anthropic-hosted model, real denied-operation/cancellation matrix and other operating systems remain release checks.
+Remaining work includes a full installed DSH GUI task, persistent review/session records, deletion support, stronger OS isolation, additional real provider/OS compatibility tests and npm publication. [Architecture and tradeoffs](docs/architecture.md).
 
-## Real test results
+## Sources and license
 
-Local automated checks pass **19 tests, zero failures and zero skips** with the supported DSH peers installed. GitHub CI runs the core on Node 22 and 24; native adapter checks explicitly skip when peers are absent.
-
-| Real Linux task | Acceptance check | Result |
-| --- | --- | --- |
-| Plain reply | Exact `US_GROK_BRIDGE_OK` response | Pass |
-| Read a file | A real `Read` event and unpredictable file proof | Pass |
-| Resume the session | Same explicit UUID recalls the proof | Pass |
-| Edit code | Real `Read` and `Edit` events change subtraction to addition | Pass |
-| Verify independently | Parent checks two arithmetic cases and the unrelated proof file | `ARITHMETIC_OK` |
-
-These tasks used Claude Code `2.1.325`, Node `22.22.3` and `grok-chat-expert` through an existing US-hosted gateway. The experimental text-tool protocol is explicitly enabled. Earlier runs falsely claimed completion; the parent verifier rejected them. This is a compatibility smoke test, not a reliability benchmark. See [exact scope and failures](docs/validation.md).
-
-## FAQ
-
-**Do I need to modify DSH or Claude Code?**
-
-Install the DSH bundle and configure its workspace. Both CLIs remain separate installations; the bridge uses their existing interfaces.
-
-**Why keep DSH in charge of verification?**
-
-A successful child process only proves that the CLI finished. The parent must check source changes and task-specific tests before accepting a worker's claim.
-
-**Can I use my existing OpenAI-compatible gateway?**
-
-Use the optional [Messages/OpenAI wrapper](docs/grok-compat.md). Providers with native function calling use standard translation. The tested Grok Web path requires explicit experimental `textTools` mode.
-
-**Does a language profile change account identity?**
-
-Profiles change language, spelling and register. They do not establish a nationality or location, and do not guarantee account eligibility or prevent bans.
-
-**Is it available on npm?**
-
-Not yet. Clone this repository and install the local DSH bundle using the quick start above.
-
-## Contributing
-
-Open an [issue](https://github.com/WaeoTech/harness-bridge/issues) with your OS, Node, DSH and Claude Code versions, the expected result and a minimal reproduction. Redact credentials, account identifiers and private source from logs. For code changes, run `npm test`, `npm run check` and `npm pack --dry-run`, and describe whether you tested the core runner, native DSH adapter or optional gateway wrapper.
-
-## Roadmap
-
-- Pin and verify supported Claude CLI releases on Linux, macOS and Windows.
-- Add persisted task/session/locale mapping and per-session locks.
-- Add parent-visible job progress and compact evidence artifacts.
-- Add isolated worktrees and a bounded plan → execute → inspect → test loop.
-- Evaluate the official Claude Agent SDK when interactive permission callbacks justify its additional dependency.
-- Publish npm and GitHub releases after real CLI compatibility checks.
-
-## Sources and acknowledgements
-
-- [BLA by qybaihe](https://github.com/qybaihe/bla): README presentation inspiration (clear positioning, quick start, architecture, capability table and evidence). Implementation is original; no BLA code, branding, metrics or benchmark claims are reused.
+- [BLA by qybaihe](https://github.com/qybaihe/bla): README presentation inspiration. Implementation is original; no BLA code, branding, metrics or benchmark claims are reused.
 - [Claude Code programmatic CLI](https://code.claude.com/docs/en/headless)
-- [Claude Code CLI reference](https://code.claude.com/docs/en/cli-reference)
+- [Claude Code flags](https://code.claude.com/docs/en/cli-reference)
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-
-## License
 
 [MIT](LICENSE). Independent project; no affiliation with or endorsement by DeepSeek or Anthropic is claimed.

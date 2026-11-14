@@ -1,7 +1,8 @@
 import { prepare, createEventParser, BridgeError } from './index.js';
+import { fileURLToPath } from 'node:url';
 
 /** DSH-owned processes use the host service for cross-platform tree cleanup. */
-export async function runManagedClaude(service, options, { signal }) {
+export async function runManagedClaude(service, options, { signal, onEvent = () => {} }) {
   if (process.env.HARNESS_BRIDGE_DEPTH) throw new BridgeError('Recursive harness invocation refused');
   const spec = await prepare(options);
   const timeout = new AbortController();
@@ -12,15 +13,22 @@ export async function runManagedClaude(service, options, { signal }) {
   try {
     combined.throwIfAborted();
     const executable = await service.resolveExecutable(spec.executable, undefined, combined);
+    const argv = [executable, ...spec.args, ...(options.workerArgs ?? [])];
+    if (!['headless', 'tmux'].includes(options.transport ?? 'headless')) throw new Error('transport must be headless or tmux');
+    if (options.transport === 'tmux') {
+      const tmux = await service.resolveExecutable('tmux', undefined, combined);
+      argv.splice(0, argv.length, process.execPath, fileURLToPath(new URL('./tmux.js', import.meta.url)), tmux);
+    }
     child = service.spawn({
-      argv: [executable, ...spec.args], cwd: spec.cwd,
+      argv, cwd: spec.cwd,
       env: { HARNESS_BRIDGE_DEPTH: '1' },
-      stdio: { stdin: { data: spec.prompt }, stdout: 'pipe', stderr: { maxBytes: 65536 } },
+      stdio: { stdin: { data: options.transport === 'tmux' ? JSON.stringify({ executable, args: [...spec.args, ...(options.workerArgs ?? [])], cwd: spec.cwd, prompt: spec.prompt }) : spec.prompt }, stdout: 'pipe', stderr: { maxBytes: 65536 } },
       graceMs: 2000, signal: combined,
     });
     const parser = createEventParser(event => {
       if (typeof event.session_id === 'string') sessionId = event.session_id;
       if (event.type === 'result') final = event;
+      onEvent(event);
     });
     read = (async () => {
       for await (const chunk of child.stdout) {

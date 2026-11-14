@@ -1,74 +1,82 @@
-# Architecture and delivery process
+# Architecture and task ownership
 
-The first release should expose one worker tool inside DSH. The parent remains responsible for planning and verification; the bridge should not start a second autonomous planner.
+DSH owns planning, verification and the original Git repository. Claude Code owns one bounded CLI session inside a Git-free temporary copy. The plugin transfers prompts, structured events and reviewed file proposals between them.
 
-## Integration options
+## Execution choices
 
-| Approach | Fit | Cost or limitation | Decision |
-| --- | --- | --- | --- |
-| Native DSH tool + Claude print CLI | Existing DSH users who already installed Claude | DSH prerelease API coupling; no interactive approval callback | Implemented preview |
-| Standalone CLI core | Debugging and use from other local tools | Caller must orchestrate tasks and cancellations | Implemented preview |
-| Claude Agent SDK | Rich structured events, interactive tool permission callbacks | Additional dependency and SDK/runtime compatibility work | Evaluate after real CLI smoke tests |
-| MCP server around the worker | Reuse from several parent harnesses | Extra transport and lifecycle layer; parent/client compatibility | Add after stabilizing the core |
-| Terminal/PTY automation | Interactive UI demonstrations | Fragile parsing, ANSI, terminal size and prompt detection | Avoid for the execution protocol |
-| Wrapping DSH around Claude around another DSH | Unbounded nested autonomy | Context drift, duplicate costs, unclear permissions and ownership | No recursive workers |
+| Approach | Current behavior | Tradeoff |
+| --- | --- | --- |
+| Native DSH + headless CLI | Managed subprocess, native jobs, stream-json | Default; no separate terminal needed |
+| Native DSH + tmux | Same CLI protocol inside a private attachable tmux server | Requires local tmux and terminal access to the same host/account |
+| Standalone core / CLI | Direct debug runner | Does not provide managed copies, hooks, review, jobs or settings |
+| Existing interactive Claude TUI | Not controlled by this plugin | Taking over arbitrary panes cannot establish the worker's settings or workspace boundary |
+| Claude Agent SDK | Future option | Additional dependency; useful if interactive per-tool approval becomes necessary |
+| MCP worker service | Future option | Extra transport and ownership surface |
 
-Claude's official CLI already provides an event protocol. It is cheaper to maintain a thin adapter over that protocol than a terminal scraper. The SDK becomes useful when the product genuinely needs per-tool parent approvals; do not rebuild that protocol by simulating keyboard input.
+Both managed modes use `claude -p --output-format stream-json --verbose`. tmux displays observed tool lifecycle lines; DSH consumes the original structured events from a private temporary JSONL file. Neither mode scrapes terminal paint or simulates keyboard input.
 
 ## Components
 
-- `src/index.js`: option validation, command construction, bounded event parsing and the standalone Node child-process transport.
-- `src/managed.js`: DSH host subprocess transport, environment scrubbing supplied by DSH and managed process-tree cleanup.
-- `src/dsh.js`: native tool schema, host-owned configuration, unrestricted-session gate, edit gate and instance concurrency guard.
-- `bin/cli.js`: diagnostic and local invocation interface.
-- `bin/openai-claude.js`: optional operator-configured provider wrapper with a per-run loopback token.
-- `examples/openai-messages-proxy.mjs`: bounded Messages/OpenAI translation, plus an explicit strict-JSON tool mode for text-only gateways; see [compatibility and limits](grok-compat.md).
-- `cordis.patch.yml`: installable DSH bundle row.
-
-The [validation record](validation.md) distinguishes local DSH API tests, real Linux Claude Code/Grok tasks, and untested release requirements.
-
-The core passes a prompt over stdin, uses an argument array with `shell: false`, preserves explicit session identity and treats missing final results as failures. Both transports cap event lines and stdout. Raw event data stays out of the parent result unless it is the final worker answer. The CLI opt-in event stream is intentionally a debugging surface.
-
-## Authority and boundaries
-
-The operator controls executable, absolute workspace root, locale, editing capability, turns, budget and timeout. The parent agent controls task text, a relative subdirectory, review/edit selection and explicit session continuation. The child cannot select a different executable or loosen operator limits through tool arguments.
-
-The root check resolves symlinks and constrains the process starting directory. It does not implement chroot, filesystem isolation or host credential isolation. The bridge refuses restricted DSH session modes because claiming to preserve their sandbox would be incorrect. The default read tools also do not prevent Claude startup hooks from executing. A future sandboxed execution mode needs actual OS-level process/file isolation and a deliberate Claude configuration strategy.
-
-The DSH service owns worker processes. Tool cancellation, plugin disposal and timeout flow into a combined AbortSignal. The standalone transport terminates its POSIX process group and escalates after two seconds; its Windows fallback only signals the direct child. Prefer the DSH transport for cross-platform process ownership. Windows and macOS must still receive real smoke tests before a release claims support.
-
-The core does not copy parent credentials into the worker. HOME-based Claude login stays with the user's CLI. The DSH subprocess service strips credential-shaped ambient variables; the standalone CLI inherits its own shell environment. An optional operator-owned provider wrapper can explicitly load a private configuration after that scrub and expose a loopback token to Claude instead of the upstream key. It shares the OS user and does not isolate that user's files. Never print auth configuration or call `gh auth token` as part of this product.
-
-## Recommended task loop
-
-1. **Scope:** parent records target workspace, acceptance checks, edit permission and a small task.
-2. **Prepare:** use a disposable worktree for edits. Confirm the existing working tree state and avoid overlapping writers.
-3. **Execute:** delegate one task. Keep locale stable and limits explicit.
-4. **Inspect:** parse final status, permission denials and session ID. Authentication and permission errors stop the loop.
-5. **Verify:** parent inspects the actual diff, checks for unrelated files and runs targeted tests. The worker's own completion claim is evidence, not proof.
-6. **Continue:** if checks fail, return specific failing evidence to the same session. Limit the product loop to a fixed number of iterations.
-7. **Report:** summarize verified changes and unresolved blockers. External publishing remains a separate user decision.
-
-Only the bounded single-worker execution primitive is implemented. Automatic worktree creation, persisted task records, loop counters and parent-side test selection are roadmap items, not current capabilities. A practical next milestone is a three-iteration maximum controller with a durable task ID, session UUID, workspace root, stable locale and verification evidence.
-
-## Release acceptance
-
-| Check | Required evidence |
+| Module | Responsibility |
 | --- | --- |
-| DSH schema | Register through the actual supported `defineTool` implementation |
-| CLI protocol | A real read-only run on each supported Claude version |
-| Permissions | Denied operations must produce a blocker; restricted DSH sessions must not spawn |
-| Sessions | Resume exact UUID in the same project without relying on latest session |
-| Editing | Fixture plus real worktree task; parent inspects diff and runs tests |
-| Cancellation | Tool abort and timeout terminate the owned process tree |
-| Packaging | `npm pack --dry-run`, MIT license, no secrets or local dependencies in tarball |
-| Documentation | Installation steps work from a clean checkout and declare actual tested versions |
+| `src/index.js` | Profiles, validation, CLI flags, bounded event parser and low-level standalone process runner |
+| `src/managed.js` | DSH subprocess contract, combined abort/timeout, output limits and transport selection |
+| `src/dsh.js` | Native Config, volatile ref reads, settings discovery, native jobs, tool ownership, review records and DSH Git audit |
+| `src/tmux.js` | Private tmux supervisor, real Claude pane child, JSONL forwarding and teardown |
+| `src/worker.js` | Operator-owned CLI settings/hook arguments and safe progress formatting |
+| `src/guard.js` | Fail-closed PreToolUse allowlist and file path/symlink checks |
+| `src/workspace.js` | Bounded Git-free copies, actual diffs, frozen proposals, whole-source conflict checks, apply and rollback |
+| `bin/openai-claude.js` | Optional private-provider wrapper with a per-run loopback token |
+| `examples/openai-messages-proxy.mjs` | Messages/OpenAI translation and opt-in strict-JSON text-tool mode |
 
-Do not advertise benchmark results, account-safety guarantees or universal CLI compatibility before collecting evidence. Language profiles are a presentation feature; account eligibility and service restrictions remain external constraints.
+The [validation record](validation.md) distinguishes native host-contract tests from real model execution and full GUI integration.
 
-## Documentation references
+## Settings and ownership
 
-- [Claude Code programmatic execution](https://code.claude.com/docs/en/headless)
+The exported `Config` uses volatile schema fields so DSH can render and edit language, transport, root, executable and limits in its settings interface. Cordis supplies readonly references for these fields. The adapter unwraps them on access, then snapshots settings before each task. Running tasks keep their snapshot.
+
+The operator chooses the executable, original root, language, transport, edit capability and execution limits. The parent agent supplies task text, a relative directory, review/edit mode, foreground/background selection and an explicit UUID for continuation. It is instructed to read `harness_settings` before composing tasks in the selected language.
+
+Each plugin instance allows one active worker and eight retained workspace records. A second check after asynchronous path validation prevents competing calls from both acquiring the worker slot. Records are scoped to the parent agent. Resume requires a retained matching root, directory, language, mode and UUID; applying/discarding removes the record. Plugin disposal cancels active work and disposes retained copies.
+
+## Workspace and review protocol
+
+1. Canonicalize the configured root and requested subdirectory.
+2. Copy regular source files/directories, excluding `.git`, `.claude`, `node_modules`, symlinks and special files. Preserve executable modes. Stop on byte, file or entry limits.
+3. Start the worker in the corresponding subdirectory of that copy. Load only bridge-owned settings and hook configuration, disable ordinary setting sources and slash commands, and use an empty MCP configuration.
+4. Stream real tool lifecycle events to a native job. Retain complete raw events only in transport memory/temporary logs, not normal DSH progress text.
+5. On termination, calculate actual changes and a readable bounded diff. Freeze the mirror fingerprint; return the record's review ID.
+6. Inspection returns the captured proposal, original root and its SHA-256 digest. Apply requires that exact digest, the matching currently configured root, operator edit capability and an edit-mode record.
+7. Apply checks the whole original snapshot, not just changed files, and verifies the frozen mirror. Preflight destinations and parents, reject symlink/hardlink collisions and deletions, then write only reviewed in-memory additions/modifications. Attempt rollback on cancellation or write failure.
+8. DSH audits original Git status and diff and runs acceptance checks. Git writes use the parent's own tools and authorization.
+
+The workspace API serializes its operations. Proposal records are memory-only. Snapshot limits are 64 MiB, 5,000 regular files, 10,000 entries; textual diffs explicitly truncate at 4 MiB. Binary changes receive summaries. An inspection digest gates exact proposal application; it is not a separate cryptographic user-consent system.
+
+## Tool and Git boundaries
+
+Review workers receive Read, Glob and Grep. Edit workers also receive Edit and Write. Bash, Agent, Task, NotebookEdit and MCP tools are denied. The PreToolUse hook additionally checks the current directory, requested paths, glob traversal, protected metadata and symlink ancestors. It fails closed if hook input cannot be parsed or validated.
+
+The original `.git` is absent from the copy; protected path access and shell-based Git are denied to the worker. The plugin invokes Git only in DSH's `harness_git_audit`, with optional locks, prompts, external diff/textconv and configured fsmonitor execution disabled. The parent remains responsible for every stage, commit and push. Git audit data is not automatically included in CC task prompts.
+
+These controls require a trusted CLI and operator-selected executable. They do not hide the Git binary from the OS, virtualize the process filesystem, isolate credentials or sandbox the CLI's own implementation. User/project settings sources are disabled, but this is not a claim that all CLI startup behavior is sandboxed. `danger-full-access` is a DSH policy gate, not an OS sandbox. Portable Node path checks and `O_NOFOLLOW` retain parent-rename TOCTOU risk; apply is optimistic concurrency with rollback, not an atomic transaction.
+
+## Process and credential lifecycle
+
+DSH owns the managed subprocess. Tool cancellation, plugin disposal and timeout combine into an AbortSignal. The transport terminates and waits for the worker and drains/destroys stdout in cleanup. The tmux supervisor handles termination by killing its private server and removing its temporary directory. Forced OS termination cannot provide a universal cleanup guarantee.
+
+DSH's subprocess service scrubs credential-shaped ambient environment variables. The operator may use an explicit private provider wrapper after that scrub. The wrapper retains the upstream key and gives Claude only a per-run loopback token; HOME-based CLI login remains available. Sharing an OS account does not provide file or credential isolation.
+
+The standalone runner inherits its invoking shell environment and has a different, lower-level contract. Its POSIX process group cleanup and Windows direct-child fallback are documented limitations. Linux is tested; no macOS/Windows support claim follows from the source being portable JavaScript.
+
+## Verification and next steps
+
+Local tests exercise actual DSH `defineTool`/volatile Config contracts, cancellation and proposal flows. Actual tmux tests launch a fixture process in a real private server and check events and socket removal. Real US-node tests use official Claude Code through Grok, verify file-derived random proof, UUID continuity, denied Git access, actual Read/Edit events, source immutability before apply and independent arithmetic checks afterward.
+
+Remaining release work includes an installed full DSH GUI task, persistent records, deletion support, OS-level isolation, further real provider/OS testing and npm publication. Language settings are presentation preferences, not nationality or account-safety controls.
+
+## References
+
+- [Claude Code programmatic CLI](https://code.claude.com/docs/en/headless)
 - [Claude Code flags](https://code.claude.com/docs/en/cli-reference)
-- [DeepSeek Harness source](https://github.com/deepseek-ai/deepseek-harness)
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 - [BLA README inspiration](https://github.com/qybaihe/bla)

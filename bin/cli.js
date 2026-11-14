@@ -14,12 +14,15 @@ if (args[0] === 'doctor') {
   console.log(`Harness Bridge (local preview)
   harness-bridge doctor
   harness-bridge run --prompt "Review this project" [--cwd PATH]
-    [--profile ${Object.keys(profiles).join('|')}] [--mode review|edit]
+    [--language ${Object.keys(profiles).join('|')}] [--mode review|edit]
+    [--profile LOCALE]  (legacy alias for --language)
     [--resume UUID] [--max-turns 8] [--budget 2] [--timeout 300000] [--events]
     [--executable /absolute/path/to/claude-or-wrapper]
 
-Review mode exposes file reading tools; edit adds Edit and Write.
-Shell and MCP tools are unavailable. CLI hooks are still user-controlled.
+Low-level headless debug runner: edits target the selected cwd directly.
+Use the DSH plugin for language settings, tmux, jobs and Git-free review/apply.
+Review exposes file reading tools; edit adds Edit and Write.
+Shell and MCP tools are unavailable. CLI hooks are user-controlled.
 This package is not yet published; run with node bin/cli.js from the checkout.`);
   if (args.length && !['help', '--help', '-h'].includes(args[0])) process.exitCode = 1;
 } else {
@@ -28,7 +31,7 @@ This package is not yet published; run with node bin/cli.js from the checkout.`)
   process.once('SIGINT', abort);
   process.once('SIGTERM', abort);
   try {
-    const mapping = { '--prompt': 'prompt', '--cwd': 'cwd', '--profile': 'profile', '--mode': 'mode', '--resume': 'sessionId', '--max-turns': 'maxTurns', '--budget': 'maxBudgetUsd', '--timeout': 'timeoutMs', '--executable': 'executable' };
+    const mapping = { '--prompt': 'prompt', '--cwd': 'cwd', '--profile': 'profile', '--language': 'profile', '--mode': 'mode', '--resume': 'sessionId', '--max-turns': 'maxTurns', '--budget': 'maxBudgetUsd', '--timeout': 'timeoutMs', '--executable': 'executable' };
     const options = {};
     let events = false;
     for (let i = 1; i < args.length; i++) {
