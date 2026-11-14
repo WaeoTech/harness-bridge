@@ -94,7 +94,7 @@ sequenceDiagram
     User->>DSH: Task and acceptance criteria
     DSH->>Bridge: Scoped prompt + review/edit + optional sessionId
     Bridge->>Bridge: Check DSH policy, workspace and operator limits
-    Bridge->>Claude: Spawn -p; prompt over stdin
+    Bridge->>Claude: Spawn -p and send prompt over stdin
     Claude-->>Bridge: stream-json events
     Bridge-->>DSH: Status, sessionId, result, denials, estimated cost
     DSH->>DSH: Inspect source/diff and run checks
