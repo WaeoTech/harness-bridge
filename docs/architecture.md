@@ -72,7 +72,7 @@ The standalone runner inherits its invoking shell environment and has a differen
 
 Local tests exercise actual DSH `defineTool`/volatile Config contracts, cancellation and proposal flows. Actual tmux tests launch a fixture process in a real private server and check events and socket removal. Real US-node tests use official Claude Code through Grok, verify file-derived random proof, UUID continuity, denied Git access, actual Read/Edit events, source immutability before apply and independent arithmetic checks afterward.
 
-Remaining release work includes an installed full DSH GUI task, persistent records, deletion support, OS-level isolation, further real provider/OS testing and npm publication. Language settings are presentation preferences, not nationality or account-safety controls.
+The isolated US DSH Web run also exercised the native language/settings form, both execution modes, actual proposal review/apply, Git audit and a successful client-side shell assertion call. Remaining release work includes the GUI Add plugin installation dialog, persistent records, deletion support, OS-level isolation, further real provider/OS testing and npm publication. Language settings are presentation preferences, not nationality or account-safety controls.
 
 ## References
 

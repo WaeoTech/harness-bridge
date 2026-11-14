@@ -45,9 +45,25 @@ The copy contained a deliberately incorrect arithmetic module. The test validate
 
 Earlier compatibility tests also demonstrated that this Grok Web route can turn native tools into ordinary text and drop tool schema/history. The explicit strict-JSON text-tool adapter produced genuine Claude tool-use/result events. That workaround is specific to the tested route and does not establish compatibility with every OpenAI-like gateway. [Setup and protocol limits](grok-compat.md).
 
+## Real DSH Web interaction checks
+
+An isolated US instance of DSH `0.2.0-rc.2` loaded the package as a local symlinked bundle, including its browser entry. The operator's production DSH instance did not load the four bridge tools. Browser automation connected through a private tunnel; only the chat/settings/terminal viewport is shown in the public screenshots.
+
+| Check | Actual evidence |
+| --- | --- |
+| Native settings | **Plugins → Harness Bridge** rendered language, transport and edit proposal controls. Changes saved through `ConfigForm.set`; subsequent real `harness_settings` calls reported `en-US` and the selected transport |
+| Headless read-only task | A Chinese request produced an English CC delegation, actual `Read` events for the two files, an English CC finding and a Chinese coordinator report. `harness_git_audit` returned an empty diff |
+| tmux edit task | Actual `Read → Read → Edit` events produced one proposal. DSH called `harness_review inspect`, applied the exact digest under explicit authorization and obtained a Git diff changing only `add` from subtraction to addition |
+| Independent parent execution | A real client-side DSH `bash` tool call imported the original module and asserted `add(3,4) === 7`, `add(-2,5) === 3` and `multiply(3,4) === 12`. Its actual tool result was `DSH_ASSERTIONS_OK: 3 checks passed` with `isError: false` |
+| Language boundary | The source request and parent report were Chinese; the CC task and result were English. Translation was performed by the coordinator model under the task instructions |
+
+The initial coordinator report claimed assertions without a corresponding DSH shell event; that claim was rejected. A follow-up also described an upstream environment that could not access the US workspace. The check counted as passed only after an explicit client tool envelope produced the actual DSH `tool/call` and matching successful `tool/result`. Conversational claims and upstream-only actions are not local execution evidence. The Grok text-tool adapter requires this distinction.
+
+The native GUI tasks and form were exercised; installation through the GUI **Add plugin** dialog was not. The test used a symlinked local bundle and the documented private operator launcher for the provider config. It does not establish npm installation or support for every DSH version.
+
 ## Boundaries and remaining checks
 
-- A full plugin-manager installation followed by a task in the live DSH GUI has not been exercised. Native tool registration, Config refs and jobs callbacks were tested using actual host packages plus a host-service fixture. Real CLI runs exercised the managed subprocess/copy/hook/tmux layers, not the entire GUI.
+- GUI Add plugin installation and npm publication remain untested; the live GUI run used a symlinked bundle.
 - The tmux transport starts the plugin's own `claude -p` pane. Taking over a pre-existing interactive Claude TUI is not implemented.
 - Anthropic-hosted model behavior and macOS/Windows integration remain untested. Linux tests do not establish support on other platforms.
 - This plugin has no OS sandbox. File-tool hooks and Git-free copies do not isolate the CLI's account, filesystem or credentials. Trusted executable behavior is required.

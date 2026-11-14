@@ -37,6 +37,69 @@
 
 **Version 0.2.0 is experimental.** Source is public; npm has not been published. Linux is the tested platform. The [validation record](docs/validation.md) separates local API tests, real CLI/Grok tests and remaining GUI/platform checks. No account-safety or benchmark claim is made.
 
+## See the interaction
+
+**Chinese request → English delegation → real CC tools → Chinese report → DSH review and Git.** Choose the worker language independently from your conversation language.
+
+```mermaid
+flowchart LR
+    You["You · 中文"] --> DSH["DSH · language = en-US"]
+    DSH --> Task["English task + acceptance checks"]
+    Task --> Headless["Headless · claude -p"]
+    Task --> Tmux["tmux · real CLI in an attachable pane"]
+    Headless --> Events["CC · Read / Edit + English result"]
+    Tmux --> Events
+    Events --> Review["DSH · 中文汇报 + inspect → apply"]
+    Review --> Git["DSH · independent checks + Git audit"]
+```
+
+| Mode | Where Claude Code runs | What you can watch |
+| --- | --- | --- |
+| Headless | A managed background CLI process | Real tool events in DSH's native job output; English CC findings and a Chinese parent report |
+| tmux | The same CLI protocol inside a private tmux pane | The native DSH job output **and** the actual pane attached from a terminal on the same host |
+
+The following screenshots come from a real, isolated **US DSH Web instance** with Claude Code `2.1.325` using an operator-configured Grok proxy. They are not generated mockups. The bundle was loaded from a local symlink; the GUI's Add plugin installation dialog was not part of this check.
+
+<details>
+<summary><strong>1 · Plugins → Harness Bridge: choose language, mode and edit policy</strong></summary>
+
+Select `English (US) · en-US`, choose headless or tmux, and enable edit proposals only when needed. The native form confirms a saved change; the next `harness_settings` call reads that value.
+
+![Native Harness Bridge language and execution settings](docs/assets/settings-language.png)
+
+</details>
+
+<details open>
+<summary><strong>2 · Headless: DSH delegates in English and receives actual Read events</strong></summary>
+
+A Chinese request asks CC to inspect the arithmetic module without changing it. DSH delegates in English, reads the native job's actual tool events and returns a Chinese explanation of the English findings. The original Git diff stays empty.
+
+![Headless Claude Code tool events inside DSH](docs/assets/headless-progress.png)
+
+![English delegation and findings with a Chinese DSH report](docs/assets/headless-result.png)
+
+</details>
+
+<details open>
+<summary><strong>3 · tmux: watch the real Claude Code pane alongside DSH</strong></summary>
+
+The CLI runs inside a plugin-owned tmux session. Attach from DSH's terminal, using the same host and OS user, to watch the same real CC process. The screenshot shows a read-only follow-up checking the repaired module; the edit run used actual `Read → Read → Edit` events.
+
+![Actual CC tmux pane attached inside DSH](docs/assets/tmux-terminal.png)
+
+</details>
+
+<details>
+<summary><strong>4 · DSH review: inspect the proposal, apply its digest and audit Git</strong></summary>
+
+For the edit run, CC changed only `add` from subtraction to addition in its Git-free copy. DSH inspected the proposal, applied the exact digest under explicit authorization and fetched the original repository's real Git diff. CC did not execute Git. Independent checks verify both additions and the unchanged multiplication.
+
+![DSH-owned proposal review and actual Git diff](docs/assets/tmux-review.png)
+
+</details>
+
+Language conversion is performed by the parent model under the task instructions, with a matching worker language preset. There is no separate translation service. Always inspect real tool results: a model's statement that it ran a command is not execution evidence. [Validation and limitations](docs/validation.md).
+
 ## Quick start
 
 Install Node.js 22+, DSH `0.2.0-rc.2`, pnpm for DSH's plugin manager, and Claude Code with your own authentication. Install tmux separately if using that transport.
@@ -77,7 +140,7 @@ dsh plugin --profile web remove @waeotech/harness-bridge
 
 ## Language and execution settings
 
-The plugin exports a native DSH configuration schema. Its volatile fields appear in DSH settings and are read through the host's readonly references. Changes affect subsequent tasks. An active task keeps its captured language, limits and transport.
+Open **Plugins → Harness Bridge** in DSH Web to choose the Claude Code language, execution mode and edit proposal policy. The form saves through DSH's native configuration service and reports whether the host accepted the change. Configure the project directory, executable and limits in the host's `tool-harness-bridge` configuration. Changes affect subsequent tasks; an active task keeps its captured language, limits and transport.
 
 | Setting | Values / behavior |
 | --- | --- |
@@ -174,7 +237,7 @@ npm pack --dry-run
 
 Tests cover stream parsing, limits, process errors/cancellation, actual DSH tool and volatile-schema contracts, proposals/apply, conflict detection/rollback, guard decisions and real tmux lifecycle with a fixture worker. DSH tests explicitly skip when host peers are absent; tmux tests explicitly skip when tmux is unavailable. See the [validation record](docs/validation.md) for the actual development environment and real-model results.
 
-Remaining work includes a full installed DSH GUI task, persistent review/session records, deletion support, stronger OS isolation, additional real provider/OS compatibility tests and npm publication. [Architecture and tradeoffs](docs/architecture.md).
+Remaining work includes validating the GUI's Add plugin installation dialog, persistent review/session records, deletion support, stronger OS isolation, additional real provider/OS compatibility tests and npm publication. Real US GUI tasks used a symlinked bundle. [Architecture and tradeoffs](docs/architecture.md).
 
 ## Sources and license
 

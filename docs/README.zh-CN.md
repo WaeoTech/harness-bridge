@@ -14,7 +14,70 @@
 
 Harness Bridge 把本机已有的 Claude Code CLI 接成 DSH 的工作工具。DSH 负责规划、权限和审核；CC 在不含 Git 元数据的临时副本里读写文件，真实工具事件进入 DSH 原生任务输出。
 
-**0.2.0 为实验版本，源码公开，尚未发布 npm。** 已用真实 Claude Code `2.1.325`、Node `22.22.3`，在美国节点通过现有 Grok 反代验证 headless 读取、UUID 恢复、Git 文件拒绝、tmux 真实编辑和父进程审核应用。完整 DSH GUI 安装会话、Anthropic 官方模型、macOS 和 Windows 仍未实测。详见[验证记录](validation.md)。
+**0.2.0 为实验版本，源码公开，尚未发布 npm。** 已用真实 Claude Code `2.1.325`、Node `22.22.3`，在美国节点通过现有 Grok 反代验证 headless 读取、UUID 恢复、Git 文件拒绝、tmux 真实编辑和父进程审核应用，并在独立 DSH GUI 中完成语言设置、双模式任务和客户端独立断言。GUI 的 Add plugin 安装对话框、Anthropic 官方模型、macOS 和 Windows 仍未实测。详见[验证记录](validation.md)。
+
+## 一眼看懂交互
+
+**中文提需求 → DSH 用英语委托 → CC 真实 Read / Edit → DSH 中文汇报 → DSH 审核与 Git。** CC 的工作语言和你与 DSH 的对话语言可以不同。
+
+```mermaid
+flowchart LR
+    You["你 · 中文需求"] --> DSH["DSH · 读取 en-US 设置"]
+    DSH --> Task["英文任务 + 验收条件"]
+    Task --> Headless["Headless · 后台 claude -p"]
+    Task --> Tmux["tmux · 可 attach 的真实 CLI pane"]
+    Headless --> Events["CC · Read / Edit + 英文结果"]
+    Tmux --> Events
+    Events --> Review["DSH · 中文汇报 + inspect → apply"]
+    Review --> Git["DSH · 独立验证 + Git 审核"]
+```
+
+| 方式 | CC 实际在哪里运行 | 你能看到什么 |
+| --- | --- | --- |
+| Headless | 插件管理的无终端后台进程 | DSH 原生 job 中真实的工具事件、CC 英文发现、DSH 中文总结 |
+| tmux | 私有 tmux pane 内的同一个 CLI 协议 | 同样的原生 job 输出，还能在同主机、同用户的终端 attach 实际 CC 进程 |
+
+下列截图来自真实、独立的 **US DSH Web 实例**，使用 Claude Code `2.1.325` 和操作者配置的 Grok 反代，不是生成的效果图。测试通过本地软链加载插件 bundle；尚未验证 GUI 的 Add plugin 安装对话框。
+
+<details>
+<summary><strong>1 · Plugins → Harness Bridge：选择语言、模式和编辑权限</strong></summary>
+
+选择 `English (US) · en-US`，切换 headless / tmux，需要编辑时再开启提案权限。原生表单保存后显示确认，下次任务的 `harness_settings` 会读到实际配置。
+
+![DSH 原生语言、执行方式和编辑提案表单](assets/settings-language.png)
+
+</details>
+
+<details open>
+<summary><strong>2 · Headless：英文委托，真实 Read 过程，中文汇报</strong></summary>
+
+中文请求要求 CC 只读检查算术模块。DSH 用英语下发任务，读取原生 job 的实际工具事件，展示 CC 的英文发现并用中文说明问题。原仓库 Git diff 保持为空。
+
+![Headless 模式下 DSH 中的真实 CC 工具事件](assets/headless-progress.png)
+
+![英文委托与 CC 英文结果，以及 DSH 中文总结](assets/headless-result.png)
+
+</details>
+
+<details open>
+<summary><strong>3 · tmux：DSH 任务与真实 CC 终端 pane</strong></summary>
+
+CLI 在插件管理的私有 tmux 会话中运行。在同主机、同 OS 用户的 DSH 终端执行 attach 命令，可以看到同一个真实 CC 进程。图中是对修复后模块的只读复核；实际编辑任务执行了 `Read → Read → Edit`。
+
+![DSH 中 attach 的真实 CC tmux pane](assets/tmux-terminal.png)
+
+</details>
+
+<details>
+<summary><strong>4 · DSH 审核：检查提案、精确摘要应用、读取真实 Git diff</strong></summary>
+
+编辑任务只将副本中 `add` 的减法改为加法。DSH 检查提案，在明确授权下应用精确 digest，再读取原仓库真实 Git diff。CC 没有执行 Git。独立断言检查两项加法和保持不变的乘法。
+
+![DSH 侧的提案审核与真实 Git diff](assets/tmux-review.png)
+
+</details>
+
+语言转换由父模型按任务指令完成，配合 CC 的回复语言预设，没有单独的翻译服务。以真实工具返回为准：模型声称执行过命令，不能作为执行证据。[实测记录与边界](validation.md)。
 
 ## 安装与配置
 
@@ -58,7 +121,7 @@ dsh plugin --profile web remove @waeotech/harness-bridge
 
 ## 语言与运行方式
 
-插件导出的原生 Config schema 会把语言、运行方式、工作目录、编辑权限和限制项展示在 DSH 设置中。实现通过 `.get()` 读取可热更新字段；新设置作用于下一个任务，已经运行的任务保持启动时的快照。
+在 DSH Web 打开 **Plugins → Harness Bridge**，直接选择 CC 沟通语言、运行方式和编辑提案权限。表单通过 DSH 原生配置服务保存，并显示主机是否接受更新。工作目录、可执行文件和执行限制在主机的 `tool-harness-bridge` 配置中设置。新设置作用于下一个任务，运行中的任务保留启动时快照。
 
 | 设置 | 行为 |
 | --- | --- |
@@ -140,7 +203,7 @@ npm pack --dry-run
 
 当前开发环境 44 项自动测试全部通过，无失败和跳过，包含真实 DSH schema 引用、原生工具注册、后台取消、审核应用、冲突与回滚、文件访问保护、真实 tmux 的事件转发和取消清理。缺少 DSH peer 时相关测试明确跳过；缺少 tmux 时 tmux 测试明确跳过。
 
-美国节点真实模型验证已通过：Read 随机校验串、UUID 恢复、原仓库 Git 配置读取被拒绝、tmux 中实际 Read/Edit、应用前原目录不变、审核应用后两项算术断言通过。完整结果及未验证范围见[验证记录](validation.md)。后续包括完整 GUI 安装验证、持久化会话、删除支持、更强隔离和更多模型/平台兼容测试。
+美国节点真实模型验证已通过：Read 随机校验串、UUID 恢复、原仓库 Git 配置读取被拒绝、tmux 中实际 Read/Edit、应用前原目录不变，以及审核应用后独立算术断言。独立 DSH GUI 还完成了原生语言表单、双模式任务、真实客户端 shell 的三项断言。完整结果及未验证范围见[验证记录](validation.md)。后续包括 GUI 的 Add plugin 安装对话框验证、持久化会话、删除支持、更强隔离和更多模型/平台兼容测试。
 
 [架构与方案比较](architecture.md) · [完整英文说明](../README.md) · [MIT 许可证](../LICENSE)
 
