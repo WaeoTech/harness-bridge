@@ -1,0 +1,10 @@
+- insert:
+    - id: tool-harness-bridge
+      name: '@waeotech/harness-bridge'
+      config:
+        profile: zh-CN
+        allowEdits: false
+        maxTurns: 8
+        maxBudgetUsd: 2
+        timeoutMs: 300000
+        executable: claude

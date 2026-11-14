@@ -1,0 +1,20 @@
+{
+  "name": "@waeotech/harness-bridge",
+  "version": "0.1.0",
+  "description": "Let DeepSeek Harness orchestrate a locally installed Claude Code CLI through structured events.",
+  "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/WaeoTech/harness-bridge.git" },
+  "homepage": "https://github.com/WaeoTech/harness-bridge#readme",
+  "bugs": { "url": "https://github.com/WaeoTech/harness-bridge/issues" },
+  "engines": { "node": ">=22" },
+  "bin": { "harness-bridge": "./bin/cli.js", "harness-bridge-openai-claude": "./bin/openai-claude.js" },
+  "main": "./src/dsh.js",
+  "exports": { ".": "./src/dsh.js", "./core": "./src/index.js", "./package.json": "./package.json", "./cordis.patch.yml": "./cordis.patch.yml" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "peerDependencies": { "@deepseek-ai/dsh-tools": "0.2.0-rc.2", "@deepseek-ai/dsh-subprocess": "0.2.0-rc.2", "@deepseek-ai/dsh-sandbox": "0.2.0-rc.2", "@deepseek-ai/cordis": "~4.0.4" },
+  "peerDependenciesMeta": { "@deepseek-ai/dsh-tools": { "optional": true }, "@deepseek-ai/dsh-subprocess": { "optional": true }, "@deepseek-ai/dsh-sandbox": { "optional": true }, "@deepseek-ai/cordis": { "optional": true } },
+  "files": ["src", "bin", "examples", "docs", "cordis.patch.yml", "README.md", "LICENSE"],
+  "scripts": { "test": "node --test", "check": "node --check src/index.js && node --check src/managed.js && node --check src/dsh.js && node --check bin/cli.js && node --check bin/openai-claude.js && node --check examples/openai-messages-proxy.mjs" },
+  "keywords": ["deepseek", "dsh", "claude-code", "harness", "agent", "plugin"]
+}
